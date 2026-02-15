@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Physics Data Hub</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: system-ui; text-align: center; background: #1a1a1a; color: white; }
+        .card { background: #2a2a2a; margin: 15px; padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        button { background: #00d1b2; border: none; padding: 15px 30px; border-radius: 10px; color: white; font-weight: bold; margin: 10px; font-size: 1.1rem;}
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #444; padding: 10px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Physics Logger</h1>
+        <button onclick="connectBLE()">CONNECT TO NANO</button>
+        <button onclick="downloadCSV()" style="background:#ffdd57; color:black;">DOWNLOAD CSV</button>
+        <p id="status">Status: 🔴 Disconnected</p>
+    </div>
+
+    <div class="card">
+        <table>
+            <thead><tr><th>v1 (m/s)</th><th>v2 (m/s)</th><th>Accel (m/s²)</th></tr></thead>
+            <tbody id="dataBody"></tbody>
+        </table>
+    </div>
+
+    <script>
+        let csvContent = "v1,v2,accel\n";
+
+        async function connectBLE() {
+            try {
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ name: 'NanoPhysics' }],
+                    optionalServices: ['180c']
+                });
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService('180c');
+                const char = await service.getCharacteristic('2a56');
+                
+                document.getElementById('status').innerText = "Status: 🟢 Connected";
+                char.startNotifications();
+                char.addEventListener('characteristicvaluechanged', (e) => {
+                    const val = new TextDecoder().decode(e.target.value);
+                    csvContent += val + "\n";
+                    const [v1, v2, a] = val.split(',');
+                    const row = `<tr><td>${v1}</td><td>${v2}</td><td>${a}</td></tr>`;
+                    document.getElementById('dataBody').insertAdjacentHTML('afterbegin', row);
+                });
+            } catch (err) { alert(err); }
+        }
+
+        function downloadCSV() {
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.setAttribute('href', url);
+            a.setAttribute('download', 'lab_data.csv');
+            a.click();
+        }
+    </script>
+</body>
+</html>
