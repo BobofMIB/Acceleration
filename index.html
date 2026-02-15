@@ -1,35 +1,51 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Physics Lab Data</title>
+    <title>Newton's Second Law Lab</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body { font-family: sans-serif; background: #121212; color: #e0e0e0; text-align: center; padding: 20px; }
-        .container { max-width: 500px; margin: auto; background: #1e1e1e; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        button { background: #00d1b2; color: white; border: none; padding: 15px 25px; border-radius: 8px; font-size: 16px; cursor: pointer; margin: 10px; transition: 0.3s; }
-        button:hover { background: #00b89c; }
-        #status { color: #ff3860; font-weight: bold; margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #333; padding: 12px; font-size: 14px; }
-        th { background: #333; }
-        .download-btn { background: #ffdd57; color: #333; }
+        body { font-family: system-ui; background: #121212; color: white; padding: 15px; }
+        .card { background: #1e1e1e; padding: 20px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        select, input { padding: 10px; border-radius: 5px; border: none; margin: 5px; width: 80%; }
+        button { padding: 12px; border-radius: 8px; border: none; cursor: pointer; font-weight: bold; margin: 5px; }
+        .btn-connect { background: #00d1b2; color: white; }
+        .btn-reset { background: #ff3860; color: white; }
+        .btn-del { background: #ffdd57; color: black; padding: 5px 10px; font-size: 12px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; }
+        th, td { border: 1px solid #333; padding: 8px; text-align: center; }
+        canvas { max-width: 100%; height: 300px; margin-top: 20px; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h1>Physics Photogate</h1>
-    <div id="status">Status: 🔴 Disconnected</div>
-    <button onclick="connectBLE()">CONNECT TO NANO</button>
-    <button class="download-btn" onclick="downloadCSV()">DOWNLOAD CSV</button>
+<div class="card">
+    <h2>Force & Acceleration Lab</h2>
+    <button class="btn-connect" onclick="connectBLE()">1. Connect</button>
+    <button class="btn-reset" onclick="sendReset()">2. Reset Arduino</button>
+    <p id="status">Status: 🔴 Disconnected</p>
+</div>
 
+<div class="card">
+    <h3>Experiment Mode</h3>
+    <select id="mode" onchange="updateUI()">
+        <option value="force">Vary Force (Solve for Mass)</option>
+        <option value="mass">Vary Mass (Solve for Force)</option>
+    </select>
+    <p id="inputLabel">Enter Applied Force (N):</p>
+    <input type="number" id="manualInput" value="1.0" step="0.1">
+</div>
+
+<div class="card">
+    <canvas id="physicsChart"></canvas>
     <table>
         <thead>
             <tr>
-                <th>v1 (m/s)</th>
-                <th>v2 (m/s)</th>
-                <th>a (m/s²)</th>
+                <th id="colHeader">Force (N)</th>
+                <th>Accel (m/s²)</th>
+                <th id="calcHeader">Calc Mass (kg)</th>
+                <th>Action</th>
             </tr>
         </thead>
         <tbody id="dataBody"></tbody>
@@ -37,9 +53,20 @@
 </div>
 
 <script>
+    let commandChar;
+    let chart;
+    let dataPoints = [];
+
     const SERVICE_UUID = "19b10000-e8f2-537e-4f6c-d104768a1214";
-    const CHAR_UUID    = "19b10001-e8f2-537e-4f6c-d104768a1214";
-    let csvRows = ["v1,v2,accel"];
+    const DATA_UUID    = "19b10001-e8f2-537e-4f6c-d104768a1214";
+    const CMD_UUID     = "19b10002-e8f2-537e-4f6c-d104768a1214";
+
+    function updateUI() {
+        const mode = document.getElementById('mode').value;
+        document.getElementById('inputLabel').innerText = mode === 'force' ? "Enter Applied Force (N):" : "Enter System Mass (kg):";
+        document.getElementById('colHeader').innerText = mode === 'force' ? "Force (N)" : "Mass (kg)";
+        document.getElementById('calcHeader').innerText = mode === 'force' ? "Calc Mass (kg)" : "Calc Force (N)";
+    }
 
     async function connectBLE() {
         try {
@@ -47,42 +74,87 @@
                 filters: [{ name: 'NanoPhys_S3' }],
                 optionalServices: [SERVICE_UUID]
             });
-
             const server = await device.gatt.connect();
             const service = await server.getPrimaryService(SERVICE_UUID);
-            const characteristic = await service.getCharacteristic(CHAR_UUID);
+            const dataC = await service.getCharacteristic(DATA_UUID);
+            commandChar = await service.getCharacteristic(CMD_UUID);
 
             document.getElementById('status').innerText = "Status: 🟢 Connected";
-            document.getElementById('status').style.color = "#48c774";
-
-            await characteristic.startNotifications();
-            characteristic.addEventListener('characteristicvaluechanged', (event) => {
-                const decoder = new TextDecoder('utf-8');
-                const val = decoder.decode(event.target.value);
-                csvRows.push(val);
-
-                const [v1, v2, a] = val.split(',');
-                const rowHtml = `<tr><td>${v1}</td><td>${v2}</td><td>${a}</td></tr>`;
-                document.getElementById('dataBody').insertAdjacentHTML('afterbegin', rowHtml);
-            });
-
-        } catch (error) {
-            console.error(error);
-            alert("Connection Error: " + error.message);
-        }
+            await dataC.startNotifications();
+            dataC.addEventListener('characteristicvaluechanged', handleData);
+        } catch (e) { alert(e); }
     }
 
-    function downloadCSV() {
-        const blob = new Blob([csvRows.join("\n")], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'physics_data.csv';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+    async function sendReset() {
+        if (!commandChar) return alert("Connect first!");
+        const enc = new TextEncoder();
+        await commandChar.writeValue(enc.encode("RESET"));
     }
+
+    function handleData(event) {
+        const val = new TextDecoder().decode(event.target.value);
+        const [v1, v2, accel] = val.split(',').map(Number);
+        const manualVal = parseFloat(document.getElementById('manualInput').value);
+        const mode = document.getElementById('mode').value;
+
+        let calculated = mode === 'force' ? (manualVal / accel) : (manualVal * accel);
+        
+        const id = Date.now();
+        const entry = { id, x: manualVal, y: accel, calc: calculated };
+        dataPoints.push(entry);
+        updateDisplay();
+    }
+
+    function deleteRow(id) {
+        dataPoints = dataPoints.filter(p => p.id !== id);
+        updateDisplay();
+    }
+
+    function updateDisplay() {
+        const body = document.getElementById('dataBody');
+        body.innerHTML = "";
+        
+        // Sort for chart plotting
+        dataPoints.sort((a, b) => a.x - b.x);
+
+        dataPoints.forEach(p => {
+            const row = `<tr>
+                <td>${p.x}</td>
+                <td>${p.y.toFixed(3)}</td>
+                <td>${p.calc.toFixed(3)}</td>
+                <td><button class="btn-del" onclick="deleteRow(${p.id})">Del</button></td>
+            </tr>`;
+            body.insertAdjacentHTML('afterbegin', row);
+        });
+        updateChart();
+    }
+
+    function updateChart() {
+        const mode = document.getElementById('mode').value;
+        const ctx = document.getElementById('physicsChart').getContext('2d');
+        
+        if (chart) chart.destroy();
+        
+        chart = new Chart(ctx, {
+            type: 'scatter',
+            data: {
+                datasets: [{
+                    label: mode === 'force' ? 'Acceleration vs Force' : 'Acceleration vs 1/Mass',
+                    data: dataPoints.map(p => ({x: p.x, y: p.y})),
+                    backgroundColor: '#00d1b2',
+                    showLine: true
+                }]
+            },
+            options: {
+                scales: {
+                    x: { title: { display: true, text: mode === 'force' ? 'Force (N)' : 'Mass (kg)', color: 'white' } },
+                    y: { title: { display: true, text: 'Accel (m/s²)', color: 'white' } }
+                }
+            }
+        });
+    }
+
+    window.onload = () => { updateUI(); updateChart(); };
 </script>
-
 </body>
 </html>
