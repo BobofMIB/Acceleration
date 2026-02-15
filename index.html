@@ -3,69 +3,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Newton's Second Law Lab</title>
+    <title>Physics Lab + Friction Offset</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body { font-family: system-ui; background: #121212; color: white; padding: 15px; }
-        .card { background: #1e1e1e; padding: 20px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
-        select, input { padding: 10px; border-radius: 5px; border: none; margin: 5px; width: 80%; }
-        button { padding: 12px; border-radius: 8px; border: none; cursor: pointer; font-weight: bold; margin: 5px; }
-        .btn-connect { background: #00d1b2; color: white; }
-        .btn-reset { background: #ff3860; color: white; }
-        .btn-del { background: #ffdd57; color: black; padding: 5px 10px; font-size: 12px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; }
-        th, td { border: 1px solid #333; padding: 8px; text-align: center; }
-        canvas { max-width: 100%; height: 300px; margin-top: 20px; }
+        body { font-family: system-ui; background: #121212; color: white; padding: 10px; }
+        .card { background: #1e1e1e; padding: 15px; border-radius: 12px; margin-bottom: 10px; border: 1px solid #333; }
+        .btn-arm { background: #ff3860; color: white; font-size: 1.2rem; width: 100%; padding: 18px; border-radius: 10px; border: none; cursor: pointer; }
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0; }
+        .stat-box { background: #2a2a2a; padding: 10px; border-radius: 8px; text-align: center; border: 1px solid #444; }
+        .val { color: #00d1b2; font-size: 1.2rem; font-weight: bold; display: block; }
+        .label { font-size: 0.8rem; color: #aaa; }
+        input, select { padding: 10px; width: 90%; margin: 10px 0; border-radius: 5px; background: #333; color: white; border: 1px solid #555; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { border: 1px solid #444; padding: 5px; text-align: center; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h2>Force & Acceleration Lab</h2>
-    <button class="btn-connect" onclick="connectBLE()">1. Connect</button>
-    <button class="btn-reset" onclick="sendReset()">2. Reset Arduino</button>
-    <p id="status">Status: 🔴 Disconnected</p>
+    <button id="armBtn" class="btn-arm" onclick="armSystem()">READY TO MEASURE</button>
+    <button onclick="connectBLE()" style="width:100%; margin-top:10px; padding: 8px; background: #444; color: white; border: none; border-radius: 5px;">Connect BLE</button>
 </div>
 
 <div class="card">
-    <h3>Experiment Mode</h3>
+    <div class="stats-grid">
+        <div class="stat-box"><span class="label" id="slopeLabel">System Mass</span><span id="slopeVal" class="val">--</span></div>
+        <div class="stat-box"><span class="label">Friction Offset</span><span id="offsetVal" class="val">--</span></div>
+        <div class="stat-box"><span class="label">R² Accuracy</span><span id="r2Val" class="val">--</span></div>
+        <div class="stat-box"><span class="label">Status</span><span id="status" class="val" style="font-size:0.9rem; color:#ff3860;">OFFLINE</span></div>
+    </div>
+</div>
+
+<div class="card">
     <select id="mode" onchange="updateUI()">
-        <option value="force">Vary Force (Solve for Mass)</option>
-        <option value="mass">Vary Mass (Solve for Force)</option>
+        <option value="force">Vary Force (Plot a vs F)</option>
+        <option value="mass">Vary Mass (Plot a vs 1/m)</option>
     </select>
-    <p id="inputLabel">Enter Applied Force (N):</p>
+    <label id="inputLabel">Applied Force (N):</label>
     <input type="number" id="manualInput" value="1.0" step="0.1">
 </div>
 
-<div class="card">
+<div class="card" style="height: 350px;">
     <canvas id="physicsChart"></canvas>
+</div>
+
+<div class="card">
     <table>
-        <thead>
-            <tr>
-                <th id="colHeader">Force (N)</th>
-                <th>Accel (m/s²)</th>
-                <th id="calcHeader">Calc Mass (kg)</th>
-                <th>Action</th>
-            </tr>
-        </thead>
+        <thead><tr><th>X Input</th><th>Accel (m/s²)</th><th>Action</th></tr></thead>
         <tbody id="dataBody"></tbody>
     </table>
 </div>
 
 <script>
-    let commandChar;
-    let chart;
-    let dataPoints = [];
-
+    let commandChar, chart, dataPoints = [];
     const SERVICE_UUID = "19b10000-e8f2-537e-4f6c-d104768a1214";
     const DATA_UUID    = "19b10001-e8f2-537e-4f6c-d104768a1214";
     const CMD_UUID     = "19b10002-e8f2-537e-4f6c-d104768a1214";
 
     function updateUI() {
         const mode = document.getElementById('mode').value;
-        document.getElementById('inputLabel').innerText = mode === 'force' ? "Enter Applied Force (N):" : "Enter System Mass (kg):";
-        document.getElementById('colHeader').innerText = mode === 'force' ? "Force (N)" : "Mass (kg)";
-        document.getElementById('calcHeader').innerText = mode === 'force' ? "Calc Mass (kg)" : "Calc Force (N)";
+        document.getElementById('inputLabel').innerText = mode === 'force' ? "Applied Force (N):" : "System Mass (kg):";
+        document.getElementById('slopeLabel').innerText = mode === 'force' ? "System Mass" : "Applied Force";
     }
 
     async function connectBLE() {
@@ -78,31 +76,69 @@
             const service = await server.getPrimaryService(SERVICE_UUID);
             const dataC = await service.getCharacteristic(DATA_UUID);
             commandChar = await service.getCharacteristic(CMD_UUID);
-
-            document.getElementById('status').innerText = "Status: 🟢 Connected";
+            document.getElementById('status').innerText = "ONLINE";
+            document.getElementById('status').style.color = "#48c774";
             await dataC.startNotifications();
             dataC.addEventListener('characteristicvaluechanged', handleData);
-        } catch (e) { alert(e); }
+        } catch (e) { alert("BLE Error: " + e); }
     }
 
-    async function sendReset() {
-        if (!commandChar) return alert("Connect first!");
-        const enc = new TextEncoder();
-        await commandChar.writeValue(enc.encode("RESET"));
+    async function armSystem() {
+        if (!commandChar) return alert("Connect BLE first");
+        await commandChar.writeValue(new TextEncoder().encode("ARM"));
+        const btn = document.getElementById('armBtn');
+        btn.innerText = "WAITING FOR CART...";
+        btn.style.background = "#ffdd57";
+        btn.style.color = "black";
     }
 
     function handleData(event) {
         const val = new TextDecoder().decode(event.target.value);
         const [v1, v2, accel] = val.split(',').map(Number);
-        const manualVal = parseFloat(document.getElementById('manualInput').value);
-        const mode = document.getElementById('mode').value;
+        const xInput = parseFloat(document.getElementById('manualInput').value);
+        const processedX = document.getElementById('mode').value === 'mass' ? (1/xInput) : xInput;
 
-        let calculated = mode === 'force' ? (manualVal / accel) : (manualVal * accel);
+        dataPoints.push({ x: processedX, y: accel, id: Date.now(), rawX: xInput });
         
-        const id = Date.now();
-        const entry = { id, x: manualVal, y: accel, calc: calculated };
-        dataPoints.push(entry);
+        const btn = document.getElementById('armBtn');
+        btn.innerText = "READY TO MEASURE";
+        btn.style.background = "#ff3860";
+        btn.style.color = "white";
         updateDisplay();
+    }
+
+    function calculateStats(pts) {
+        if (pts.length < 2) return { slope: 0, intercept: 0, r2: 0, friction: 0 };
+        const n = pts.length;
+        let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+        pts.forEach(p => {
+            sumX += p.x; sumY += p.y;
+            sumXY += (p.x * p.y); sumX2 += (p.x * p.x); sumY2 += (p.y * p.y);
+        });
+        const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+        const intercept = (sumY - slope * sumX) / n;
+        const r = (n * sumXY - sumX * sumY) / Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+        
+        // Friction Offset (x-intercept): when a=0, Force = Friction
+        // 0 = slope(x) + intercept -> x = -intercept/slope
+        const friction = -intercept / slope;
+
+        return { slope, intercept, r2: r * r, friction };
+    }
+
+    function updateDisplay() {
+        const body = document.getElementById('dataBody');
+        body.innerHTML = "";
+        dataPoints.forEach(p => {
+            body.insertAdjacentHTML('afterbegin', `<tr><td>${p.rawX}</td><td>${p.y.toFixed(3)}</td><td><button onclick="deleteRow(${p.id})" style="background:none; border:none; color:#ff3860; cursor:pointer;">❌</button></td></tr>`);
+        });
+
+        const stats = calculateStats(dataPoints);
+        document.getElementById('slopeVal').innerText = stats.slope.toFixed(3);
+        document.getElementById('r2Val').innerText = stats.r2.toFixed(4);
+        document.getElementById('offsetVal').innerText = stats.friction.toFixed(3) + " N";
+        
+        updateChart(stats);
     }
 
     function deleteRow(id) {
@@ -110,51 +146,42 @@
         updateDisplay();
     }
 
-    function updateDisplay() {
-        const body = document.getElementById('dataBody');
-        body.innerHTML = "";
-        
-        // Sort for chart plotting
-        dataPoints.sort((a, b) => a.x - b.x);
-
-        dataPoints.forEach(p => {
-            const row = `<tr>
-                <td>${p.x}</td>
-                <td>${p.y.toFixed(3)}</td>
-                <td>${p.calc.toFixed(3)}</td>
-                <td><button class="btn-del" onclick="deleteRow(${p.id})">Del</button></td>
-            </tr>`;
-            body.insertAdjacentHTML('afterbegin', row);
-        });
-        updateChart();
-    }
-
-    function updateChart() {
-        const mode = document.getElementById('mode').value;
+    function updateChart(stats) {
         const ctx = document.getElementById('physicsChart').getContext('2d');
-        
         if (chart) chart.destroy();
-        
+
+        const sorted = [...dataPoints].sort((a,b) => a.x - b.x);
+        let linePoints = [];
+        if (sorted.length > 1) {
+            const minX = sorted[0].x * 0.8;
+            const maxX = sorted[sorted.length-1].x * 1.2;
+            linePoints = [
+                { x: minX, y: stats.slope * minX + stats.intercept },
+                { x: maxX, y: stats.slope * maxX + stats.intercept }
+            ];
+        }
+
         chart = new Chart(ctx, {
             type: 'scatter',
             data: {
-                datasets: [{
-                    label: mode === 'force' ? 'Acceleration vs Force' : 'Acceleration vs 1/Mass',
-                    data: dataPoints.map(p => ({x: p.x, y: p.y})),
-                    backgroundColor: '#00d1b2',
-                    showLine: true
-                }]
+                datasets: [
+                    { label: 'Raw Data', data: dataPoints, backgroundColor: '#00d1b2' },
+                    { label: 'Best Fit', data: linePoints, type: 'line', borderColor: '#ffdd57', borderWidth: 2, fill: false, pointRadius: 0 }
+                ]
             },
             options: {
+                responsive: true,
+                maintainAspectRatio: false,
                 scales: {
-                    x: { title: { display: true, text: mode === 'force' ? 'Force (N)' : 'Mass (kg)', color: 'white' } },
-                    y: { title: { display: true, text: 'Accel (m/s²)', color: 'white' } }
-                }
+                    x: { type: 'linear', grid: { color: '#333' }, title: { display: true, text: 'Input (N or 1/kg)', color: '#aaa' } },
+                    y: { grid: { color: '#333' }, title: { display: true, text: 'Accel (m/s²)', color: '#aaa' } }
+                },
+                plugins: { legend: { labels: { color: 'white' } } }
             }
         });
     }
 
-    window.onload = () => { updateUI(); updateChart(); };
+    window.onload = updateUI;
 </script>
 </body>
 </html>
