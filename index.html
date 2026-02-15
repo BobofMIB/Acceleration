@@ -1,64 +1,88 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Physics Data Hub</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physics Lab Data</title>
     <style>
-        body { font-family: system-ui; text-align: center; background: #1a1a1a; color: white; }
-        .card { background: #2a2a2a; margin: 15px; padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
-        button { background: #00d1b2; border: none; padding: 15px 30px; border-radius: 10px; color: white; font-weight: bold; margin: 10px; font-size: 1.1rem;}
+        body { font-family: sans-serif; background: #121212; color: #e0e0e0; text-align: center; padding: 20px; }
+        .container { max-width: 500px; margin: auto; background: #1e1e1e; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        button { background: #00d1b2; color: white; border: none; padding: 15px 25px; border-radius: 8px; font-size: 16px; cursor: pointer; margin: 10px; transition: 0.3s; }
+        button:hover { background: #00b89c; }
+        #status { color: #ff3860; font-weight: bold; margin-bottom: 20px; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #444; padding: 10px; }
+        th, td { border: 1px solid #333; padding: 12px; font-size: 14px; }
+        th { background: #333; }
+        .download-btn { background: #ffdd57; color: #333; }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h1>Physics Logger</h1>
-        <button onclick="connectBLE()">CONNECT TO NANO</button>
-        <button onclick="downloadCSV()" style="background:#ffdd57; color:black;">DOWNLOAD CSV</button>
-        <p id="status">Status: 🔴 Disconnected</p>
-    </div>
 
-    <div class="card">
-        <table>
-            <thead><tr><th>v1 (m/s)</th><th>v2 (m/s)</th><th>Accel (m/s²)</th></tr></thead>
-            <tbody id="dataBody"></tbody>
-        </table>
-    </div>
+<div class="container">
+    <h1>Physics Photogate</h1>
+    <div id="status">Status: 🔴 Disconnected</div>
+    <button onclick="connectBLE()">CONNECT TO NANO</button>
+    <button class="download-btn" onclick="downloadCSV()">DOWNLOAD CSV</button>
 
-    <script>
-        let csvContent = "v1,v2,accel\n";
+    <table>
+        <thead>
+            <tr>
+                <th>v1 (m/s)</th>
+                <th>v2 (m/s)</th>
+                <th>a (m/s²)</th>
+            </tr>
+        </thead>
+        <tbody id="dataBody"></tbody>
+    </table>
+</div>
 
-        async function connectBLE() {
-            try {
-                const device = await navigator.bluetooth.requestDevice({
-                    filters: [{ name: 'NanoPhysics' }],
-                    optionalServices: ['180c']
-                });
-                const server = await device.gatt.connect();
-                const service = await server.getPrimaryService('180c');
-                const char = await service.getCharacteristic('2a56');
-                
-                document.getElementById('status').innerText = "Status: 🟢 Connected";
-                char.startNotifications();
-                char.addEventListener('characteristicvaluechanged', (e) => {
-                    const val = new TextDecoder().decode(e.target.value);
-                    csvContent += val + "\n";
-                    const [v1, v2, a] = val.split(',');
-                    const row = `<tr><td>${v1}</td><td>${v2}</td><td>${a}</td></tr>`;
-                    document.getElementById('dataBody').insertAdjacentHTML('afterbegin', row);
-                });
-            } catch (err) { alert(err); }
+<script>
+    const SERVICE_UUID = "19b10000-e8f2-537e-4f6c-d104768a1214";
+    const CHAR_UUID    = "19b10001-e8f2-537e-4f6c-d104768a1214";
+    let csvRows = ["v1,v2,accel"];
+
+    async function connectBLE() {
+        try {
+            const device = await navigator.bluetooth.requestDevice({
+                filters: [{ name: 'NanoPhys_S3' }],
+                optionalServices: [SERVICE_UUID]
+            });
+
+            const server = await device.gatt.connect();
+            const service = await server.getPrimaryService(SERVICE_UUID);
+            const characteristic = await service.getCharacteristic(CHAR_UUID);
+
+            document.getElementById('status').innerText = "Status: 🟢 Connected";
+            document.getElementById('status').style.color = "#48c774";
+
+            await characteristic.startNotifications();
+            characteristic.addEventListener('characteristicvaluechanged', (event) => {
+                const decoder = new TextDecoder('utf-8');
+                const val = decoder.decode(event.target.value);
+                csvRows.push(val);
+
+                const [v1, v2, a] = val.split(',');
+                const rowHtml = `<tr><td>${v1}</td><td>${v2}</td><td>${a}</td></tr>`;
+                document.getElementById('dataBody').insertAdjacentHTML('afterbegin', rowHtml);
+            });
+
+        } catch (error) {
+            console.error(error);
+            alert("Connection Error: " + error.message);
         }
+    }
 
-        function downloadCSV() {
-            const blob = new Blob([csvContent], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.setAttribute('href', url);
-            a.setAttribute('download', 'lab_data.csv');
-            a.click();
-        }
-    </script>
+    function downloadCSV() {
+        const blob = new Blob([csvRows.join("\n")], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'physics_data.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    }
+</script>
+
 </body>
 </html>
