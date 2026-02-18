@@ -2,61 +2,81 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Newton's Law Pro Lab</title>
+    <title>Newton's Law Lab - Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { font-family: system-ui; background: #121212; color: white; padding: 15px; }
         .card { background: #1e1e1e; padding: 20px; border-radius: 12px; margin-bottom: 15px; }
         .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
-        .tabs button { flex: 1; padding: 12px; background: #333; color: #999; border: none; cursor: pointer; border-radius: 8px; }
-        .tabs button.active { background: #00d1b2; color: white; border: 2px solid white; }
-        .btn-arm { background: #ffdd57; color: black; padding: 15px; font-size: 1.1em; width: 100%; border-radius: 8px; font-weight: bold; cursor: pointer; border: none; margin: 10px 0; }
-        .btn-csv { background: #4a4a4a; color: white; border: none; padding: 8px; border-radius: 5px; cursor: pointer; }
-        .stats-box { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; background: #252525; padding: 15px; border-radius: 8px; border-left: 5px solid #ffdd57; }
-        .stat-val { font-size: 1.2em; font-weight: bold; color: #ffdd57; }
+        .tabs button { flex: 1; padding: 12px; background: #333; color: #999; border: none; cursor: pointer; border-radius: 8px; font-weight: bold; }
+        .tabs button.active { background: #00d1b2; color: white; box-shadow: 0 0 10px #00d1b2; }
+        .btn-arm { padding: 15px; font-size: 1.1em; width: 100%; border-radius: 8px; font-weight: bold; cursor: pointer; border: none; transition: 0.3s; margin-top:10px; }
+        .state-idle { background: #555; color: white; }
+        .state-armed { background: #ffdd57; color: black; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+        .stats-box { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 15px 0; background: #252525; padding: 15px; border-radius: 8px; border-left: 5px solid #00d1b2; }
+        .stat-label { font-size: 0.7em; color: #999; text-transform: uppercase; }
+        .stat-val { font-size: 1.1em; font-weight: bold; color: #00d1b2; }
+        .friction-control { background: #2d2d2d; padding: 10px; border-radius: 8px; margin-top: 10px; border: 1px solid #444; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { border: 1px solid #333; padding: 8px; text-align: center; }
+        th, td { border: 1px solid #333; padding: 10px; text-align: center; }
+        .btn-action { background: #444; color: white; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h2>Force & Acceleration Lab</h2>
-    <button style="background:#00d1b2; color:white; border:none; padding:10px; border-radius:5px;" onclick="connectBLE()">Connect BLE</button>
-    <span id="status"> 🔴 Disconnected</span>
+    <div style="display:flex; justify-content: space-between; align-items: center;">
+        <h2>Newton's Second Law Pro</h2>
+        <button class="btn-action" style="background:#00d1b2" onclick="connectBLE()">Connect Arduino</button>
+    </div>
+    <p id="status">Status: 🔴 Disconnected</p>
 </div>
 
 <div class="card">
     <div class="tabs">
-        <button id="tabF" class="active" onclick="setMode('force')">Vary Force</button>
-        <button id="tabM" onclick="setMode('mass')">Vary Mass</button>
+        <button id="tabF" class="active" onclick="setMode('force')">Vary Force (A vs F)</button>
+        <button id="tabM" onclick="setMode('mass')">Vary Mass (A vs 1/M)</button>
     </div>
-    <label id="inputLabel">Applied Force (N):</label>
-    <input type="number" id="manualInput" value="1.0" step="0.1" style="width:60px; padding:5px;">
     
-    <button class="btn-arm" onclick="sendCommand('ARM')">READY: Arm for Next Reading</button>
+    <div style="display: flex; gap: 20px; align-items: center; flex-wrap: wrap;">
+        <div>
+            <label id="inputLabel">Applied Force (N):</label><br>
+            <input type="number" id="manualInput" value="1.0" step="0.1" style="width:80px; padding:8px; border-radius:5px; margin-top:5px;">
+        </div>
+        <div class="friction-control">
+            <label>Friction Comp (N):</label><br>
+            <input type="number" id="frictionInput" value="0.00" step="0.01" onchange="updateDisplay()" style="width:80px; padding:5px; border-radius:5px; margin-top:5px; background: #121212; color: #ff3860; border: 1px solid #ff3860;">
+        </div>
+    </div>
+
+    <button id="armBtn" class="btn-arm state-idle" onclick="armSystem()">READY: Arm for Reading</button>
 </div>
 
 <div class="card">
     <div class="stats-box">
-        <div>Slope: <div id="statSlope" class="stat-val">0.000</div></div>
-        <div>R² Fit: <div id="statR2" class="stat-val">0.000</div></div>
+        <div><div class="stat-label">Slope</div><div id="statSlope" class="stat-val">0.000</div></div>
+        <div><div class="stat-label">R² Fit</div><div id="statR2" class="stat-val">0.000</div></div>
+        <div><div class="stat-label" id="meanLabel">Mean Mass</div><div id="statMean" class="stat-val">0.000</div></div>
+        <div><div class="stat-label">Net Force (N)</div><div id="statNet" class="stat-val">0.000</div></div>
     </div>
     <canvas id="physicsChart"></canvas>
-    <div style="margin-top:20px; display:flex; justify-content: space-between;">
-        <button class="btn-csv" onclick="exportCSV()">Download CSV</button>
-        <button class="btn-csv" style="background:#ff3860" onclick="clearData()">Clear Data</button>
+    <div style="margin-top:20px; display:flex; gap:10px;">
+        <button class="btn-action" onclick="exportCSV()">Download CSV</button>
+        <button class="btn-action" style="background:#ff3860" onclick="clearData()">Clear Tab Data</button>
     </div>
     <table>
         <thead>
-            <tr><th id="colH">Force (N)</th><th>Accel (m/s²)</th><th id="calcH">Calc Mass</th><th>Action</th></tr>
+            <tr><th id="colH">Force (N)</th><th>Accel (m/s²)</th><th id="calcH">Calc Mass (kg)</th><th>Action</th></tr>
         </thead>
         <tbody id="dataBody"></tbody>
     </table>
 </div>
 
 <script>
-    let commandChar, mode = 'force', dataPoints = [];
+    let commandChar, chart, currentMode = 'force';
+    let forceData = [], massData = [];
+
     const SERVICE_UUID = "19b10000-e8f2-537e-4f6c-d104768a1214";
     const DATA_UUID = "19b10001-e8f2-537e-4f6c-d104768a1214";
     const CMD_UUID = "19b10002-e8f2-537e-4f6c-d104768a1214";
@@ -68,53 +88,89 @@
             const service = await server.getPrimaryService(SERVICE_UUID);
             const dataC = await service.getCharacteristic(DATA_UUID);
             commandChar = await service.getCharacteristic(CMD_UUID);
-            document.getElementById('status').innerText = " 🟢 Connected";
+            document.getElementById('status').innerText = "Status: 🟢 Connected";
             await dataC.startNotifications();
             dataC.addEventListener('characteristicvaluechanged', (e) => {
-                const val = new TextDecoder().decode(e.target.value);
-                const [v1, v2, accel] = val.split(',').map(Number);
+                const [v1, v2, accel] = new TextDecoder().decode(e.target.value).split(',').map(Number);
                 const manual = parseFloat(document.getElementById('manualInput').value);
-                const xVal = mode === 'force' ? manual : (1/manual);
-                dataPoints.push({ id: Date.now(), x: xVal, y: accel, raw: manual });
+                const entry = { id: Date.now(), accel, raw: manual, x: currentMode === 'force' ? manual : 1/manual };
+                if (currentMode === 'force') forceData.push(entry); else massData.push(entry);
+                document.getElementById('armBtn').innerText = "SUCCESS: Arm Again";
+                document.getElementById('armBtn').className = "btn-arm state-idle";
                 updateDisplay();
             });
         } catch (e) { alert(e); }
     }
 
-    async function sendCommand(cmd) {
-        if (commandChar) await commandChar.writeValue(new TextEncoder().encode(cmd));
+    async function armSystem() {
+        if (!commandChar) return alert("Connect first!");
+        document.getElementById('armBtn').innerText = "ARMED: Waiting...";
+        document.getElementById('armBtn').className = "btn-arm state-armed";
+        await commandChar.writeValue(new TextEncoder().encode("ARM"));
     }
 
-    function exportCSV() {
-        let csv = "X_Value,Acceleration,Original_Input\n";
-        dataPoints.forEach(p => { csv += `${p.x},${p.y},${p.raw}\n`; });
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.setAttribute('href', url);
-        a.setAttribute('download', 'physics_data.csv');
-        a.click();
+    function updateDisplay() {
+        const activeData = currentMode === 'force' ? forceData : massData;
+        const friction = parseFloat(document.getElementById('frictionInput').value) || 0;
+        const body = document.getElementById('dataBody');
+        body.innerHTML = "";
+        
+        let sumCalc = 0;
+        activeData.forEach(p => {
+            // F - f = ma -> m = (F-f)/a
+            // In Vary Mass: F_calc = (ma) + f
+            const calcVal = currentMode === 'force' ? ((p.raw - friction) / p.accel) : ((p.raw * p.accel) + friction);
+            sumCalc += calcVal;
+            body.insertAdjacentHTML('afterbegin', `<tr><td>${p.raw}</td><td>${p.accel.toFixed(3)}</td><td>${calcVal.toFixed(3)}</td><td><button onclick="removePoint(${p.id})">X</button></td></tr>`);
+        });
+
+        const mean = activeData.length > 0 ? (sumCalc / activeData.length) : 0;
+        document.getElementById('statMean').innerText = mean.toFixed(3);
+        document.getElementById('statNet').innerText = (parseFloat(document.getElementById('manualInput').value) - friction).toFixed(3);
+
+        const n = activeData.length;
+        let sx=0, sy=0, sxy=0, sx2=0, sy2=0;
+        // For the graph, we use the original manual input for linearization
+        activeData.forEach(p => { sx+=p.x; sy+=p.accel; sxy+=p.x*p.accel; sx2+=p.x*p.x; sy2+=p.accel*p.accel; });
+        const slope = (n*sxy - sx*sy) / (n*sx2 - sx*sx);
+        const intercept = (sy - slope*sx) / n;
+        const r2 = Math.pow((n*sxy - sx*sy) / Math.sqrt((n*sx2 - sx*sx) * (n*sy2 - sy*sy)), 2);
+
+        document.getElementById('statSlope').innerText = (slope || 0).toFixed(3);
+        document.getElementById('statR2').innerText = isNaN(r2) ? "0.000" : r2.toFixed(4);
+        
+        const ctx = document.getElementById('physicsChart');
+        if (chart) chart.destroy();
+        const sorted = [...activeData].sort((a,b) => a.x - b.x);
+        chart = new Chart(ctx, {
+            type: 'scatter',
+            data: { datasets: [
+                { label: 'Trials', data: sorted.map(p => ({x: p.x, y: p.accel})), backgroundColor: '#00d1b2' },
+                { label: 'Trendline', data: sorted.length > 1 ? [{x: sorted[0].x, y: slope*sorted[0].x+intercept}, {x: sorted[sorted.length-1].x, y: slope*sorted[sorted.length-1].x+intercept}] : [], type: 'line', borderColor: '#ffdd57', borderDash:[5,5], fill: false }
+            ]},
+            options: { scales: { x: { title: { display: true, text: currentMode==='force'?'Force (N)':'1/Mass (1/kg)', color:'white'} }, y: { title: { display: true, text: 'Accel (m/s²)', color:'white'} } } }
+        });
     }
 
     function setMode(m) {
-        mode = m; 
-        dataPoints = [];
-        document.getElementById('tabF').className = mode === 'force' ? 'active' : '';
-        document.getElementById('tabM').className = mode === 'mass' ? 'active' : '';
-        document.getElementById('inputLabel').innerText = mode === 'force' ? "Applied Force (N):" : "System Mass (kg):";
+        currentMode = m;
+        document.getElementById('tabF').className = m === 'force' ? 'active' : '';
+        document.getElementById('tabM').className = m === 'mass' ? 'active' : '';
+        document.getElementById('meanLabel').innerText = m === 'force' ? "Mean Mass" : "Mean Force";
+        document.getElementById('inputLabel').innerText = m === 'force' ? "Applied Force (N):" : "System Mass (kg):";
+        document.getElementById('colH').innerText = m === 'force' ? "Force (N)" : "Mass (kg)";
+        document.getElementById('calcH').innerText = m === 'force' ? "Calc Mass (kg)" : "Calc Force (N)";
         updateDisplay();
     }
 
-    // (Regression and Chart logic remain similar to previous version for brevity)
-    function updateDisplay() {
-        const body = document.getElementById('dataBody');
-        body.innerHTML = "";
-        dataPoints.forEach(p => {
-            body.insertAdjacentHTML('afterbegin', `<tr><td>${p.raw}</td><td>${p.y.toFixed(3)}</td><td>${(p.raw/p.y).toFixed(3)}</td><td><button onclick="dataPoints=dataPoints.filter(i=>i.id!==${p.id});updateDisplay()">X</button></td></tr>`);
-        });
-        // Call your chart and stats update functions here...
+    function removePoint(id) { if(currentMode === 'force') forceData = forceData.filter(p => p.id !== id); else massData = massData.filter(p => p.id !== id); updateDisplay(); }
+    function clearData() { if(confirm("Clear tab?")) { if(currentMode === 'force') forceData = []; else massData = []; updateDisplay(); } }
+    function exportCSV() {
+        let csv = "Mode,Input,Acceleration,FrictionOffset\n", data = currentMode === 'force' ? forceData : massData;
+        const f = document.getElementById('frictionInput').value;
+        data.forEach(p => csv += `${currentMode},${p.raw},${p.accel},${f}\n`);
+        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'})); a.download="physics_data.csv"; a.click();
     }
-    function clearData() { dataPoints = []; updateDisplay(); }
 </script>
 </body>
 </html>
