@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Newton's Law Lab - Pro Edition</title>
+    <title>Newton's Law Lab Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { font-family: system-ui; background: #121212; color: white; padding: 15px; }
@@ -22,12 +22,13 @@
         .stat-val { font-size: 1.1em; font-weight: bold; color: #00d1b2; }
         
         .controls-row { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; margin-bottom: 15px; }
-        .control-group { background: #2d2d2d; padding: 10px; border-radius: 8px; border: 1px solid #444; flex: 1; min-width: 160px; display: flex; flex-direction: column; justify-content: space-between;}
+        .control-group { background: #2d2d2d; padding: 10px; border-radius: 8px; border: 1px solid #444; flex: 1; min-width: 180px; display: flex; flex-direction: column; justify-content: space-between;}
         
         .stepper { display: flex; align-items: center; gap: 5px; margin-top: 8px; }
         .stepper button { flex: 1; background: #444; color: white; border: none; padding: 8px 0; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 1.2em; }
-        .stepper button:hover { background: #555; }
-        .stepper input { width: 60px; text-align: center; background: #121212; color: white; border: 1px solid #444; padding: 7px; border-radius: 4px; font-size: 0.9em; }
+        .stepper input { width: 70px; text-align: center; background: #121212; color: white; border: 1px solid #444; padding: 7px; border-radius: 4px; font-size: 0.9em; }
+
+        .force-display { font-size: 0.75em; color: #ffdd57; margin-top: 4px; font-weight: bold; text-align: center;}
 
         table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.85em; }
         th, td { border: 1px solid #333; padding: 10px; text-align: center; }
@@ -43,7 +44,15 @@
 <div class="card">
     <div style="display:flex; justify-content: space-between; align-items: center;">
         <h2>Newton's Law Lab Pro</h2>
-        <button id="bleBtn" style="background:#00d1b2; color:black; border:none; padding:10px 20px; border-radius:4px; font-weight:bold; cursor:pointer;" onclick="connectBLE()">Connect BLE</button>
+        <div>
+            <span style="font-size: 0.8em; color: #999;">Gravity (g): </span>
+            <select id="gVal" onchange="updateDisplay()" style="background:#333; color:white; border:none; padding:5px; border-radius:4px;">
+                <option value="9.806">9.81</option>
+                <option value="9.8">9.8</option>
+                <option value="10.0">10.0</option>
+            </select>
+            <button id="bleBtn" style="background:#00d1b2; color:black; border:none; padding:10px 20px; border-radius:4px; font-weight:bold; cursor:pointer; margin-left:10px;" onclick="connectBLE()">Connect BLE</button>
+        </div>
     </div>
 </div>
 
@@ -55,12 +64,13 @@
     
     <div class="controls-row">
         <div class="control-group">
-            <label id="inputLabel" style="font-size: 0.85em; color: #bbb;">Hanging Wt (N):</label>
+            <label id="inputLabel" style="font-size: 0.85em; color: #bbb;">Hanging Mass (kg):</label>
             <div class="stepper">
                 <button onclick="step('manualInput', -0.1)">-</button>
-                <input type="number" id="manualInput" value="1.00" step="0.1">
+                <input type="number" id="manualInput" value="0.10" step="0.1">
                 <button onclick="step('manualInput', 0.1)">+</button>
             </div>
+            <div id="inputForceCalc" class="force-display">≈ 0.98 N</div>
         </div>
 
         <div class="control-group">
@@ -70,7 +80,7 @@
                 <input type="number" id="goalInput" value="0.50" step="0.1" onchange="updateDisplay()">
                 <button onclick="step('goalInput', 0.1)">+</button>
             </div>
-        </div>
+            <div style="height:15px"></div> </div>
 
         <div class="control-group">
             <label style="font-size: 0.85em; color: #bbb;">Fric (N) / Card (m):</label>
@@ -101,7 +111,8 @@
     <table>
         <thead>
             <tr>
-                <th id="colH">Hanging (N)</th>
+                <th id="colH">Mass (kg)</th>
+                <th id="colF">Force (N)</th>
                 <th class="kin-col hidden-col">v1 (m/s)</th>
                 <th class="kin-col hidden-col">v2 (m/s)</th>
                 <th class="kin-col hidden-col">Δt (s)</th>
@@ -119,11 +130,11 @@
     let forceData = [], massData = [];
     let showKinematics = false, hideAnswers = false;
 
-    // --- Helper Functions ---
+    function getG() { return parseFloat(document.getElementById('gVal').value); }
+
     function step(id, amount) {
         let el = document.getElementById(id);
-        let val = parseFloat(el.value) + amount;
-        el.value = Math.max(0, val).toFixed(2);
+        el.value = Math.max(0, parseFloat(el.value) + amount).toFixed(2);
         updateDisplay();
     }
 
@@ -147,26 +158,22 @@
     function handleData(event) {
         const [v1, v2, accel] = new TextDecoder().decode(event.target.value).split(',').map(Number);
         const dt = (v2 - v1) / accel;
-        const manual = parseFloat(document.getElementById('manualInput').value);
-        const entry = { id: Date.now(), v1, v2, dt, accel, raw: manual, x: currentMode === 'force' ? manual : 1/manual };
+        const g = getG();
+        const manualMass = parseFloat(document.getElementById('manualInput').value);
+        
+        // entry.raw is always the applied FORCE in Newtons for the math
+        const appliedForce = currentMode === 'force' ? (manualMass * g) : manualMass; 
+
+        const entry = { 
+            id: Date.now(), v1, v2, dt, accel, 
+            mass: manualMass, 
+            force: appliedForce,
+            x: currentMode === 'force' ? appliedForce : 1/manualMass 
+        };
+
         if (currentMode === 'force') forceData.push(entry); else massData.push(entry);
         document.getElementById('armBtn').innerText = "SUCCESS: Arm Again";
         document.getElementById('armBtn').className = "btn-arm state-idle";
-        updateDisplay();
-    }
-
-    function toggleKinematics() {
-        showKinematics = !showKinematics;
-        document.getElementById('btnKinematics').classList.toggle('active');
-        document.querySelectorAll('.kin-col').forEach(el => el.classList.toggle('hidden-col'));
-        updateDisplay();
-    }
-
-    function toggleHideAccel() {
-        hideAnswers = !hideAnswers;
-        document.getElementById('btnHideAccel').classList.toggle('active');
-        document.getElementById('statsContainer').classList.toggle('blurred-text');
-        document.getElementById('physicsChart').classList.toggle('blurred-text');
         updateDisplay();
     }
 
@@ -174,18 +181,26 @@
         const activeData = currentMode === 'force' ? forceData : massData;
         const goal = parseFloat(document.getElementById('goalInput').value);
         const friction = parseFloat(document.getElementById('frictionInput').value) || 0;
+        const g = getG();
+        
+        // Update Live Converter UI
+        const currentInput = parseFloat(document.getElementById('manualInput').value);
+        document.getElementById('inputForceCalc').innerText = `≈ ${(currentInput * g).toFixed(2)} N`;
+
         const body = document.getElementById('dataBody');
         body.innerHTML = "";
-        
         let sumCalc = 0;
         const blurClass = hideAnswers ? 'blurred-text' : '';
 
         activeData.forEach(p => {
-            const calcVal = currentMode === 'force' ? ((p.raw - friction) / p.accel) : ((p.raw * p.accel) + friction);
+            const force = currentMode === 'force' ? (p.mass * g) : p.force;
+            const calcVal = currentMode === 'force' ? ((force - friction) / p.accel) : ((p.mass * p.accel) + friction);
             sumCalc += calcVal;
+            
             body.insertAdjacentHTML('afterbegin', `
                 <tr>
-                    <td>${p.raw.toFixed(2)}</td>
+                    <td>${p.mass.toFixed(2)}</td>
+                    <td>${force.toFixed(2)}</td>
                     <td class="kin-col ${showKinematics ? '' : 'hidden-col'}">${p.v1.toFixed(3)}</td>
                     <td class="kin-col ${showKinematics ? '' : 'hidden-col'}">${p.v2.toFixed(3)}</td>
                     <td class="kin-col ${showKinematics ? '' : 'hidden-col'}">${p.dt.toFixed(4)}</td>
@@ -200,20 +215,24 @@
         document.getElementById('statMean').innerText = mean.toFixed(3);
         document.getElementById('statDev').innerText = dev.toFixed(1) + "%";
         
-        const statsBox = document.getElementById('statsContainer');
-        if (activeData.length > 0 && dev < 5) statsBox.classList.add('goal-met');
-        else statsBox.classList.remove('goal-met');
+        if (activeData.length > 0 && dev < 5) document.getElementById('statsContainer').classList.add('goal-met');
+        else document.getElementById('statsContainer').classList.remove('goal-met');
 
         const n = activeData.length;
         let sx=0, sy=0, sxy=0, sx2=0, sy2=0;
-        activeData.forEach(p => { sx+=p.x; sy+=p.accel; sxy+=p.x*p.accel; sx2+=p.x*p.x; sy2+=p.accel*p.accel; });
+        activeData.forEach(p => { 
+            const xVal = currentMode === 'force' ? (p.mass * g) : (1/p.mass);
+            sx+=xVal; sy+=p.accel; sxy+=xVal*p.accel; sx2+=xVal*xVal; sy2+=p.accel*p.accel; 
+        });
         const slope = (n*sxy - sx*sy) / (n*sx2 - sx*sx);
         const r2 = Math.pow((n*sxy - sx*sy) / Math.sqrt((n*sx2 - sx*sx) * (n*sy2 - sy*sy)), 2);
         document.getElementById('statSlope').innerText = (slope || 0).toFixed(3);
         document.getElementById('statR2').innerText = isNaN(r2) ? "0.000" : r2.toFixed(4);
-        updateChart(activeData, slope);
+        updateChart(activeData, slope, g);
     }
 
+    function toggleKinematics() { showKinematics = !showKinematics; document.getElementById('btnKinematics').classList.toggle('active'); document.querySelectorAll('.kin-col').forEach(el => el.classList.toggle('hidden-col')); updateDisplay(); }
+    function toggleHideAccel() { hideAnswers = !hideAnswers; document.getElementById('btnHideAccel').classList.toggle('active'); document.getElementById('statsContainer').classList.toggle('blurred-text'); document.getElementById('physicsChart').classList.toggle('blurred-text'); updateDisplay(); }
     async function armSystem() { if (commandChar) await commandChar.writeValue(new TextEncoder().encode("ARM")); document.getElementById('armBtn').className="btn-arm state-armed"; document.getElementById('armBtn').innerText="ARMED..."; }
     
     function setMode(m) { 
@@ -221,25 +240,25 @@
         document.getElementById('tabF').className = m === 'force' ? 'active' : '';
         document.getElementById('tabM').className = m === 'mass' ? 'active' : '';
         document.getElementById('goalLabel').innerText = m === 'force' ? "Goal Mass (kg):" : "Goal Force (N):";
-        document.getElementById('inputLabel').innerText = m === 'force' ? "Hanging Wt (N):" : "Total Mass (kg):";
-        document.getElementById('colH').innerText = m === 'force' ? "Hanging (N)" : "Mass (kg)";
+        document.getElementById('inputLabel').innerText = m === 'force' ? "Hanging Mass (kg):" : "Total Mass (kg):";
+        document.getElementById('colH').innerText = m === 'force' ? "Mass (kg)" : "Mass (kg)";
         document.getElementById('calcH').innerText = m === 'force' ? "Calc Mass" : "Calc Force";
         updateDisplay(); 
     }
 
     function removePoint(id) { if(currentMode === 'force') forceData = forceData.filter(p=>p.id!==id); else massData = massData.filter(p=>p.id!==id); updateDisplay(); }
     
-    function updateChart(data, m) {
+    function updateChart(data, m, g) {
         const ctx = document.getElementById('physicsChart');
         if (chart) chart.destroy();
-        const sorted = [...data].sort((a,b) => a.x - b.x);
+        const sorted = [...data].sort((a,b) => (currentMode==='force' ? a.mass : 1/a.mass) - (currentMode==='force' ? b.mass : 1/b.mass));
         chart = new Chart(ctx, {
             type: 'scatter',
             data: { datasets: [
-                { label: 'Trials', data: sorted.map(p => ({x: p.x, y: p.accel})), backgroundColor: '#00d1b2' },
-                { label: 'Fit', data: sorted.length > 1 ? [{x: sorted[0].x, y: m*sorted[0].x}, {x: sorted[sorted.length-1].x, y: m*sorted[sorted.length-1].x}] : [], type: 'line', borderColor: '#ffdd57', fill: false }
+                { label: 'Trials', data: data.map(p => ({x: currentMode==='force' ? (p.mass*g) : (1/p.mass), y: p.accel})), backgroundColor: '#00d1b2' },
+                { label: 'Fit', data: data.length > 1 ? [{x: 0, y: 0}, {x: currentMode==='force' ? 5 : 10, y: m*(currentMode==='force' ? 5 : 10)}] : [], type: 'line', borderColor: '#ffdd57', fill: false }
             ]},
-            options: { animation: false, scales: { x: { display: true }, y: { display: true } } }
+            options: { animation: false, scales: { x: { display: true, title:{display:true, text: currentMode==='force'?'Force (N)':'1/Mass (1/kg)', color:'white'} }, y: { display: true, title:{display:true, text:'Accel (m/s²)', color:'white'} } } }
         });
     }
 </script>
