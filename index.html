@@ -22,7 +22,7 @@
         .stat-val { font-size: 1.1em; font-weight: bold; color: #00d1b2; }
         
         .controls-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 15px; }
-        .control-group { background: #2d2d2d; padding: 10px; border-radius: 8px; border: 1px solid #444; flex: 1; min-width: 140px;}
+        .control-group { background: #2d2d2d; padding: 10px; border-radius: 8px; border: 1px solid #444; flex: 1; min-width: 130px;}
         input { width: 100%; padding: 8px; border-radius: 5px; border: 1px solid #444; background: #121212; color: white; margin-top: 5px; box-sizing: border-box;}
         
         table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.85em; }
@@ -32,13 +32,14 @@
         
         .toggle-btn { padding: 5px; font-size: 0.75em; border-radius: 4px; border: 1px solid #00d1b2; background: transparent; color: #00d1b2; cursor: pointer; margin-top: 8px; width: 100%;}
         .toggle-btn.active { background: #00d1b2; color: #000; }
+        .fric-input { color: #ff3860; border: 1px solid #ff3860; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <div style="display:flex; justify-content: space-between; align-items: center;">
-        <h2>Newton's Law Lab</h2>
+        <h2>Newton's Law Lab Pro</h2>
         <button id="bleBtn" style="background:#00d1b2; color:black; border:none; padding:10px 20px; border-radius:4px; font-weight:bold; cursor:pointer;" onclick="connectBLE()">Connect BLE</button>
     </div>
 </div>
@@ -59,12 +60,16 @@
             <input type="number" id="goalInput" value="0.50" step="0.01" onchange="updateDisplay()">
         </div>
         <div class="control-group">
-            <label>Card Length (m):</label>
+            <label>Friction (N):</label>
+            <input type="number" id="frictionInput" class="fric-input" value="0.00" step="0.01" onchange="updateDisplay()">
+        </div>
+        <div class="control-group">
+            <label>Card Len (m):</label>
             <input type="number" id="cardLenInput" value="0.050" step="0.001" onchange="updateCardLen()">
         </div>
         <div class="control-group">
-            <label>Teaching Mode:</label>
-            <button id="btnKinematics" class="toggle-btn" onclick="toggleKinematics()">Show v & t Data</button>
+            <label>Teaching Tools:</label>
+            <button id="btnKinematics" class="toggle-btn" onclick="toggleKinematics()">Show v & t</button>
             <button id="btnHideAccel" class="toggle-btn" onclick="toggleHideAccel()">Hide Answers</button>
         </div>
     </div>
@@ -83,8 +88,8 @@
     
     <table>
         <thead>
-            <tr id="headerRow">
-                <th id="colH">Input (N)</th>
+            <tr>
+                <th id="colH">Hanging (N)</th>
                 <th class="kin-col hidden-col">v1 (m/s)</th>
                 <th class="kin-col hidden-col">v2 (m/s)</th>
                 <th class="kin-col hidden-col">Δt (s)</th>
@@ -116,9 +121,7 @@
     }
 
     async function updateCardLen() {
-        if (!commandChar) return;
-        const val = document.getElementById('cardLenInput').value;
-        await commandChar.writeValue(new TextEncoder().encode("LEN:" + val));
+        if (commandChar) await commandChar.writeValue(new TextEncoder().encode("LEN:" + document.getElementById('cardLenInput').value));
     }
 
     function handleData(event) {
@@ -150,6 +153,7 @@
     function updateDisplay() {
         const activeData = currentMode === 'force' ? forceData : massData;
         const goal = parseFloat(document.getElementById('goalInput').value);
+        const friction = parseFloat(document.getElementById('frictionInput').value) || 0;
         const body = document.getElementById('dataBody');
         body.innerHTML = "";
         
@@ -157,7 +161,8 @@
         const blurClass = hideAnswers ? 'blurred-text' : '';
 
         activeData.forEach(p => {
-            const calcVal = currentMode === 'force' ? (p.raw / p.accel) : (p.raw * p.accel);
+            // F_net = F_app - F_fric = m * a
+            const calcVal = currentMode === 'force' ? ((p.raw - friction) / p.accel) : ((p.raw * p.accel) + friction);
             sumCalc += calcVal;
             body.insertAdjacentHTML('afterbegin', `
                 <tr>
@@ -172,12 +177,13 @@
         });
 
         const mean = activeData.length > 0 ? (sumCalc / activeData.length) : 0;
-        const dev = goal > 0 ? Math.abs((mean - goal) / goal) * 100 : 0;
+        const dev = (goal > 0 && activeData.length > 0) ? Math.abs((mean - goal) / goal) * 100 : 0;
         document.getElementById('statMean').innerText = mean.toFixed(3);
         document.getElementById('statDev').innerText = dev.toFixed(1) + "%";
         
-        if (activeData.length > 0 && dev < 5) document.getElementById('statsContainer').classList.add('goal-met');
-        else document.getElementById('statsContainer').classList.remove('goal-met');
+        const statsBox = document.getElementById('statsContainer');
+        if (activeData.length > 0 && dev < 5) statsBox.classList.add('goal-met');
+        else statsBox.classList.remove('goal-met');
 
         const n = activeData.length;
         let sx=0, sy=0, sxy=0, sx2=0, sy2=0;
