@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Lab Pro: Physics & pH</title>
+    <title>Lab Pro Multi-Tool</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { font-family: system-ui; background: #000; color: white; padding: 10px; font-size: 16px; }
@@ -12,25 +12,29 @@
         .tabs button { flex: 1; padding: 15px 5px; background: #333; color: #fff; border: none; cursor: pointer; border-radius: 8px; font-weight: bold; font-size: 0.9em; }
         .tabs button.active { background: #00d1b2; color: black; box-shadow: 0 0 15px #00d1b2; }
         
-        .btn-arm { padding: 20px; font-size: 1.3em; width: 100%; border-radius: 8px; font-weight: 800; cursor: pointer; border: none; transition: 0.3s; margin-top:10px; text-transform: uppercase; }
+        .btn-arm { padding: 15px; font-size: 1.3em; width: 100%; border-radius: 8px; font-weight: 800; cursor: pointer; border: none; transition: 0.3s; margin-top:10px; text-transform: uppercase; }
         .state-idle { background: #444; color: white; }
         .state-armed { background: #ffdd57; color: black; animation: pulse 1s infinite; }
         
-        .stats-box { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 15px 0; background: #111; padding: 15px; border-radius: 8px; border-left: 8px solid #00d1b2; }
+        .stats-box { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 15px 0; background: #111; padding: 15px; border-radius: 8px; border-left: 8px solid #00d1b2; }
         .stat-label { font-size: 0.8em; color: #00d1b2; text-transform: uppercase; font-weight: bold; }
-        .stat-val { font-size: 1.4em; font-weight: 900; color: #ffffff; }
+        .stat-val { font-size: 1.2em; font-weight: 900; color: #ffffff; }
+        
+        .controls-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px; }
+        .control-group { background: #111; padding: 10px; border-radius: 8px; border: 1px solid #333; flex: 1; min-width: 180px; }
         
         .stepper { display: flex; align-items: center; gap: 5px; margin-top: 5px; }
-        .stepper button { width: 50px; height: 50px; background: #00d1b2; color: black; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 1.5em; }
-        .stepper input { flex: 1; height: 44px; text-align: center; background: #000; color: #00d1b2; border: 2px solid #00d1b2; border-radius: 6px; font-size: 1.2em; font-weight: bold; }
+        .stepper button { width: 40px; height: 40px; background: #00d1b2; color: black; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 1.5em; }
+        .stepper input { flex: 1; height: 36px; text-align: center; background: #000; color: white; border: 2px solid #00d1b2; border-radius: 6px; font-size: 1.1em; font-weight: bold; }
 
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 1em; }
-        th { background: #333; color: #00d1b2; padding: 12px; font-size: 0.8em; }
-        td { border: 1px solid #444; padding: 12px; text-align: center; font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9em; }
+        th { background: #333; color: #00d1b2; padding: 10px; }
+        td { border: 1px solid #444; padding: 10px; text-align: center; font-weight: bold; }
+        .hidden-col { display: none; }
         
-        .toggle-btn { padding: 10px; font-size: 0.9em; border-radius: 6px; border: 2px solid #00d1b2; background: transparent; color: #00d1b2; font-weight: bold; cursor: pointer; }
-        
-        /* New pH Mode Container styles */
+        .toggle-btn { padding: 10px; font-size: 0.9em; border-radius: 6px; border: 2px solid #00d1b2; background: transparent; color: #00d1b2; font-weight: bold; cursor: pointer; width: 100%; margin-top: 5px;}
+        .toggle-btn.active { background: #00d1b2; color: black; }
+
         #phUI { display: none; text-align: center; padding: 30px 10px; }
         .live-val { font-size: 5em; font-weight: 900; color: #00d1b2; margin: 0; line-height: 1; }
         .live-label { font-size: 1.2em; color: #888; text-transform: uppercase; font-weight: bold; margin-bottom: 20px; }
@@ -43,8 +47,9 @@
 <div class="card" style="display:flex; flex-direction: column; gap: 10px;">
     <h2 style="margin:0; color: #00d1b2; text-align: center;">Lab Pro Multi-Tool</h2>
     <div style="display: flex; gap: 10px; justify-content: center;">
-        <button class="toggle-btn" onclick="exportCSV()">CSV</button>
-        <button id="bleBtn" style="background:#00d1b2; color:black; border:none; padding:10px 20px; border-radius:6px; font-weight:900;" onclick="connectBLE()">CONNECT</button>
+        <button class="toggle-btn" style="margin:0; width: auto;" onclick="exportCSV()">CSV</button>
+        <button class="toggle-btn" style="margin:0; width: auto; border-color: #ff3860; color: #ff3860;" onclick="resetData()">Reset</button>
+        <button id="bleBtn" style="background:#00d1b2; color:black; border:none; padding:10px 20px; border-radius:6px; font-weight:900; cursor:pointer;" onclick="connectBLE()">CONNECT</button>
     </div>
 </div>
 
@@ -56,18 +61,51 @@
     </div>
     
     <div id="physicsUI">
-        <div class="stepper">
-            <button onclick="step('manualInput', -0.1)">-</button>
-            <input type="number" id="manualInput" value="0.50" step="0.1">
-            <button onclick="step('manualInput', 0.1)">+</button>
+        <div class="controls-row">
+            <div class="control-group">
+                <label id="inputLabel" style="font-weight: bold; font-size: 0.85em;">Hanging Mass (kg):</label>
+                <div class="stepper">
+                    <button onclick="step('manualInput', -0.1)">-</button>
+                    <input type="number" id="manualInput" value="0.50" step="0.1" onchange="updateDisplay()">
+                    <button onclick="step('manualInput', 0.1)">+</button>
+                </div>
+            </div>
+            <div class="control-group">
+                <label style="font-weight: bold; font-size: 0.85em;">Friction (N) & Card (m):</label>
+                <div style="display: flex; gap: 5px; margin-top: 5px;">
+                    <input type="number" id="frictionInput" value="0.00" step="0.01" onchange="updateDisplay()" style="width: 50%; background:#000; color:#ff3860; border:1px solid #444; border-radius:4px; text-align:center;">
+                    <input type="number" id="cardLenInput" value="0.050" step="0.001" onchange="updateCardLen()" style="width: 50%; background:#000; color:white; border:1px solid #444; border-radius:4px; text-align:center;">
+                </div>
+            </div>
         </div>
-        <button id="armBtn" class="btn-arm state-idle" onclick="armSystem()">ARM SYSTEM</button>
-        
+
+        <button id="armBtn" class="btn-arm state-idle" onclick="armSystem()">ARM GATES</button>
+
         <div class="stats-box" id="statsContainer">
             <div><div class="stat-label">Slope</div><div id="statSlope" class="stat-val">0.00</div></div>
             <div><div class="stat-label">Points</div><div id="statCount" class="stat-val">0</div></div>
+            <div><div class="stat-label" id="meanLabel">Mean</div><div id="statMean" class="stat-val">0.00</div></div>
+            <div>
+                <button id="btnKinematics" class="toggle-btn" onclick="toggleKinematics()">Show v/t</button>
+            </div>
         </div>
-        <canvas id="physicsChart" style="max-height: 200px;"></canvas>
+        
+        <canvas id="physicsChart" style="max-height: 250px;"></canvas>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>Mass (kg)</th>
+                    <th>Force (N)</th>
+                    <th class="kin-col hidden-col">v1</th>
+                    <th class="kin-col hidden-col">v2</th>
+                    <th class="kin-col hidden-col">Δt</th>
+                    <th>Accel</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="dataBody"></tbody>
+        </table>
     </div>
 
     <div id="phUI">
@@ -82,10 +120,13 @@
 <script>
     let commandChar, chart, currentMode = 'force';
     let forceData = [], massData = [];
+    let showKinematics = false;
+    const g = 9.806;
 
     function step(id, amount) {
         let el = document.getElementById(id);
         el.value = Math.max(0, parseFloat(el.value) + amount).toFixed(2);
+        updateDisplay();
     }
 
     function setMode(m) { 
@@ -100,7 +141,61 @@
         } else {
             document.getElementById('physicsUI').style.display = 'block';
             document.getElementById('phUI').style.display = 'none';
+            document.getElementById('inputLabel').innerText = m === 'force' ? "Hanging Mass (kg):" : "Total Mass (kg):";
+            document.getElementById('meanLabel').innerText = m === 'force' ? "Mean Calc Mass" : "Mean Calc Force";
+            updateDisplay();
         }
+    }
+
+    function updateDisplay() {
+        if(currentMode === 'ph') return;
+        const activeData = currentMode === 'force' ? forceData : massData;
+        const friction = parseFloat(document.getElementById('frictionInput').value) || 0;
+        const body = document.getElementById('dataBody');
+        body.innerHTML = "";
+        let sumCalc = 0;
+
+        activeData.forEach(p => {
+            const calcVal = currentMode === 'force' ? ((p.force - friction) / p.accel) : ((p.mass * p.accel) + friction);
+            sumCalc += calcVal;
+            
+            body.insertAdjacentHTML('afterbegin', `
+                <tr>
+                    <td>${p.mass.toFixed(2)}</td><td>${p.force.toFixed(2)}</td>
+                    <td class="kin-col ${showKinematics ? '' : 'hidden-col'}">${p.v1.toFixed(3)}</td>
+                    <td class="kin-col ${showKinematics ? '' : 'hidden-col'}">${p.v2.toFixed(3)}</td>
+                    <td class="kin-col ${showKinematics ? '' : 'hidden-col'}">${p.dt.toFixed(4)}</td>
+                    <td>${p.accel.toFixed(3)}</td>
+                    <td><button onclick="removePoint(${p.id})" style="color:red; cursor:pointer;">X</button></td>
+                </tr>`);
+        });
+
+        document.getElementById('statCount').innerText = activeData.length;
+        document.getElementById('statMean').innerText = activeData.length > 0 ? (sumCalc / activeData.length).toFixed(3) : "0.00";
+
+        // Linear Regression
+        const n = activeData.length;
+        let sx=0, sy=0, sxy=0, sx2=0;
+        activeData.forEach(p => { 
+            const x = currentMode === 'force' ? p.force : (1/p.mass);
+            sx+=x; sy+=p.accel; sxy+=x*p.accel; sx2+=x*x;
+        });
+        const slope = n > 1 ? ((n*sxy - sx*sy) / (n*sx2 - sx*sx)) : 0;
+        document.getElementById('statSlope').innerText = slope.toFixed(3);
+        updateChart(activeData, slope);
+    }
+
+    function updateChart(data, m) {
+        const ctx = document.getElementById('physicsChart');
+        if (chart) chart.destroy();
+        chart = new Chart(ctx, {
+            type: 'scatter',
+            data: { datasets: [
+                { label: 'Trials', data: data.map(p => ({x: currentMode==='force' ? p.force : (1/p.mass), y: p.accel})), backgroundColor: '#00d1b2' },
+                { label: 'Fit', data: data.length > 1 ? [{x:0, y:0}, {x:5, y:m*5}] : [], type: 'line', borderColor: '#ffdd57', fill: false }
+            ]},
+            options: { animation: false, scales: { x: { display: true, title:{display:true, text:currentMode==='force'?'Force (N)':'1/Mass (1/kg)', color:'white'} }, y: { display: true, title:{display:true, text:'Accel (m/s²)', color:'white'} } } }
+        });
     }
 
     async function connectBLE() {
@@ -116,35 +211,39 @@
             dataC.addEventListener('characteristicvaluechanged', (e) => {
                 const str = new TextDecoder().decode(e.target.value);
                 
-                // If it's Sensor Data
                 if (str.startsWith("PH,")) {
-                    if (currentMode !== 'ph') setMode('ph'); // Auto-switch tab!
+                    if (currentMode !== 'ph') setMode('ph');
                     const parts = str.split(',');
                     document.getElementById('phDisplay').innerText = parseFloat(parts[1]).toFixed(2);
                     document.getElementById('tempDisplay').innerText = parseFloat(parts[2]).toFixed(1) + "°";
-                } 
-                // If it's Physics Data
-                else {
-                    if (currentMode === 'ph') setMode('force'); // Auto-switch back to physics
-                    
-                    // FIX: Revert the arm button to idle visually
+                } else {
+                    if (currentMode === 'ph') setMode('force');
                     document.getElementById('armBtn').className = "btn-arm state-idle";
-                    document.getElementById('armBtn').innerText = "ARM SYSTEM";
+                    document.getElementById('armBtn').innerText = "ARM GATES";
 
                     const [v1, v2, accel] = str.split(',').map(Number);
                     const mInput = parseFloat(document.getElementById('manualInput').value);
-                    const entry = { force: mInput * 9.81, accel: accel, mass: 0.5 };
-                    forceData.push(entry);
-                    document.getElementById('statCount').innerText = forceData.length;
+                    const entry = {
+                        id: Date.now(), v1, v2, dt: (v2-v1)/accel, accel,
+                        mass: currentMode === 'force' ? 0.5 : mInput,
+                        force: currentMode === 'force' ? (mInput * g) : (0.1 * g)
+                    };
+                    if (currentMode === 'force') forceData.push(entry); else massData.push(entry);
+                    updateDisplay();
                 }
             });
         } catch (e) { alert(e); }
     }
 
-    async function armSystem() { 
-        if (commandChar) await commandChar.writeValue(new TextEncoder().encode("ARM")); 
-        document.getElementById('armBtn').className="btn-arm state-armed"; 
-        document.getElementById('armBtn').innerText="WAITING FOR GATES..."; 
+    function removePoint(id) { forceData = forceData.filter(p => p.id !== id); massData = massData.filter(p => p.id !== id); updateDisplay(); }
+    function resetData() { if(confirm("Clear current data?")) { if(currentMode==='force') forceData=[]; else massData=[]; updateDisplay(); } }
+    function toggleKinematics() { showKinematics = !showKinematics; document.getElementById('btnKinematics').classList.toggle('active'); updateDisplay(); }
+    async function armSystem() { if (commandChar) await commandChar.writeValue(new TextEncoder().encode("ARM")); document.getElementById('armBtn').className="btn-arm state-armed"; document.getElementById('armBtn').innerText="WAITING..."; }
+    async function updateCardLen() { if (commandChar) await commandChar.writeValue(new TextEncoder().encode("LEN:" + document.getElementById('cardLenInput').value)); }
+    function exportCSV() {
+        const data = currentMode === 'force' ? forceData : massData;
+        let csv = "Mass(kg),Force(N),Accel(m/s2)\n" + data.map(p => `${p.mass},${p.force},${p.accel}`).join("\n");
+        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'})); a.download='lab_data.csv'; a.click();
     }
 </script>
 </body>
