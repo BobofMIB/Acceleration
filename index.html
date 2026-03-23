@@ -26,20 +26,20 @@
         th { background: #333; color: #00d1b2; padding: 8px; }
         td { border: 1px solid #444; padding: 8px; text-align: center; }
         .fric-control { display: flex; align-items: center; justify-content: space-between; background: #222; padding: 10px; border-radius: 8px; border: 1px dashed #555; }
-        #fricValDisp { color: #ffdd57; font-weight: bold; font-family: monospace; }
+        #fricValDisp { color: #ffdd57; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="card" style="display:flex; justify-content: space-between; align-items: center;">
-    <div style="color: #ffdd57; font-weight: bold;">AQA RP7</div>
+    <div style="color: #ffdd57; font-weight: bold;">AQA RP7 PRO</div>
     <button id="bleBtn" style="background:#00d1b2; border:none; padding:8px 15px; border-radius:6px; font-weight:bold;" onclick="connectBLE()">CONNECT</button>
 </div>
 
 <div class="card">
     <div class="tabs">
-        <button id="tabF" class="active" onclick="setMode('force')">Vary Force</button>
-        <button id="tabM" onclick="setMode('mass')">Vary Mass</button>
+        <button id="tabF" class="active" onclick="setMode('force')">1. Vary Force</button>
+        <button id="tabM" onclick="setMode('mass')">2. Vary Mass</button>
     </div>
 
     <div class="input-row">
@@ -52,7 +52,7 @@
             </div>
         </div>
         <div class="input-group">
-            <label id="secondInputLabel">TOTAL SYSTEM (FIXED kg)</label>
+            <label id="secondInputLabel">TOTAL SYSTEM MASS (kg)</label>
             <input type="number" id="totalMassInput" value="0.60" step="0.01" style="background:#000; color:#00d1b2; border:1px solid #444; height:32px; text-align:center; font-weight:bold;">
         </div>
     </div>
@@ -60,7 +60,7 @@
     <button id="armBtn" class="btn-arm state-idle" onclick="armSystem()">ARM PHOTOGATES</button>
 
     <div class="fric-control">
-        <div style="font-size:0.8em;">Friction Compensation: <span id="fricValDisp">OFF</span></div>
+        <div style="font-size:0.8em;">Friction Offset: <span id="fricValDisp">OFF</span></div>
         <input type="checkbox" id="fricToggle" onchange="updateDisplay()" style="width:20px; height:20px; cursor:pointer;">
     </div>
 
@@ -68,14 +68,14 @@
         <div><div class="stat-label">Slope</div><div id="statSlope" class="stat-val">0.00</div></div>
         <div><div class="stat-label">Trials</div><div id="statCount" class="stat-val">0</div></div>
         <div><div class="stat-label" id="meanLabel">Calc Mass</div><div id="statMean" class="stat-val">0.00</div></div>
-        <button onclick="exportCSV()" style="background:#444; color:white; border:none; border-radius:4px; font-size:0.7em;">CSV</button>
+        <button onclick="clearData()" style="background:#cc241d; color:white; border:none; border-radius:4px; font-size:0.7em; font-weight:bold;">CLEAR</button>
     </div>
 
     <canvas id="physicsChart" style="max-height: 180px;"></canvas>
 
     <table>
         <thead>
-            <tr id="tableHead"><th>Input</th><th>Net F (N)</th><th>Accel</th><th>X</th></tr>
+            <tr id="tableHead"><th>Hanger (kg)</th><th>Net F (N)</th><th>Accel</th><th>X</th></tr>
         </thead>
         <tbody id="dataBody"></tbody>
     </table>
@@ -140,7 +140,6 @@
         const useComp = document.getElementById('fricToggle').checked;
         body.innerHTML = "";
 
-        // Regression for Vary Force (a vs F)
         let sx=0, sy=0, sxy=0, sx2=0, n = data.length;
         data.forEach(p => {
             const x = currentMode === 'force' ? p.appliedF : (1/p.total);
@@ -149,22 +148,20 @@
         
         let slope = n > 1 ? (n*sxy - sx*sy)/(n*sx2 - sx*sx) : 0;
         let intercept = n > 1 ? (sy - slope*sx)/n : 0;
-        
-        // Friction is X-intercept: 0 = slope*x + intercept -> x = -intercept/slope
         let fOffset = (slope !== 0) ? (-intercept / slope) : 0;
-        if (fOffset < 0) fOffset = 0; // Negative friction is physically impossible here
+        if (fOffset < 0) fOffset = 0;
 
         document.getElementById('fricValDisp').innerText = useComp ? fOffset.toFixed(3) + " N" : "OFF";
 
         data.forEach(p => {
             const netF = (currentMode === 'force' && useComp) ? (p.appliedF - fOffset) : p.appliedF;
-            const rowX = currentMode === 'force' ? p.hanger : p.total;
-            body.insertAdjacentHTML('afterbegin', `<tr><td>${rowX.toFixed(3)}</td><td>${netF.toFixed(3)}</td><td>${p.accel.toFixed(3)}</td><td><button onclick="remove(${p.id})">×</button></td></tr>`);
+            const rowLabel = currentMode === 'force' ? p.hanger : p.total;
+            body.insertAdjacentHTML('afterbegin', `<tr><td>${rowLabel.toFixed(3)}</td><td>${netF.toFixed(3)}</td><td>${p.accel.toFixed(3)}</td><td><button onclick="remove(${p.id})">×</button></td></tr>`);
         });
 
         document.getElementById('statCount').innerText = n;
         document.getElementById('statSlope').innerText = slope.toFixed(3);
-        document.getElementById('statMean').innerText = currentMode === 'force' ? (slope > 0 ? (1/slope).toFixed(3) : "0.00") : slope.toFixed(3);
+        document.getElementById('statMean').innerText = currentMode === 'force' ? (slope > 0 ? (1/slope).toFixed(3) : "0.00") : (slope.toFixed(3) + " N");
 
         drawChart(data, slope, intercept, fOffset, useComp);
     }
@@ -172,8 +169,7 @@
     function drawChart(data, slope, intercept, fOffset, useComp) {
         if (chart) chart.destroy();
         const pts = data.map(p => ({ x: (currentMode === 'force' && useComp) ? (p.appliedF - fOffset) : (currentMode === 'force' ? p.appliedF : (1/p.total)), y: p.accel }));
-        
-        const maxX = pts.length > 0 ? Math.max(...pts.map(p => p.x)) * 1.1 : 1;
+        const maxX = pts.length > 0 ? Math.max(...pts.map(p => p.x)) * 1.2 : 1;
         const lineData = (useComp && currentMode === 'force') 
             ? [{x: 0, y: 0}, {x: maxX, y: slope * maxX}]
             : [{x: 0, y: intercept}, {x: maxX, y: slope * maxX + intercept}];
@@ -187,10 +183,7 @@
 
     async function armSystem() { if(commandChar) await commandChar.writeValue(new TextEncoder().encode("ARM")); document.getElementById('armBtn').className="btn-arm state-armed"; document.getElementById('armBtn').innerText="WAITING..."; }
     function remove(id) { forceData = forceData.filter(p=>p.id!==id); massData = massData.filter(p=>p.id!==id); updateDisplay(); }
-    function exportCSV() { 
-        let csv = "Hanger,TotalMass,Accel\n" + (currentMode==='force'?forceData:massData).map(p=>`${p.hanger},${p.total},${p.accel}`).join("\n");
-        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'})); a.download='AQA_RP7_Data.csv'; a.click();
-    }
+    function clearData() { forceData = []; massData = []; updateDisplay(); }
 </script>
 </body>
 </html>
