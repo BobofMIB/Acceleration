@@ -27,6 +27,7 @@
         td { border: 1px solid #444; padding: 8px; text-align: center; }
         .fric-control { display: flex; align-items: center; justify-content: space-between; background: #222; padding: 10px; border-radius: 8px; border: 1px dashed #555; }
         #fricValDisp { color: #ffdd57; font-weight: bold; }
+        .hidden { display: none; }
     </style>
 </head>
 <body>
@@ -51,8 +52,8 @@
                 <button onclick="step('mainInput', 0.01)">+</button>
             </div>
         </div>
-        <div class="input-group">
-            <label id="secondInputLabel">TOTAL SYSTEM MASS (kg)</label>
+        <div class="input-group" id="massInputGroup" style="visibility: hidden;">
+            <label>TOTAL SYSTEM MASS (kg)</label>
             <input type="number" id="totalMassInput" value="0.60" step="0.01" style="background:#000; color:#00d1b2; border:1px solid #444; height:32px; text-align:center; font-weight:bold;">
         </div>
     </div>
@@ -75,7 +76,12 @@
 
     <table>
         <thead>
-            <tr id="tableHead"><th>Hanger (kg)</th><th>Net F (N)</th><th>Accel</th><th>X</th></tr>
+            <tr id="tableHead">
+                <th id="colHeader1">Hanger (kg)</th>
+                <th id="colHeader2">Net Force (N)</th>
+                <th>Accel (m/s²)</th>
+                <th>X</th>
+            </tr>
         </thead>
         <tbody id="dataBody"></tbody>
     </table>
@@ -96,10 +102,17 @@
         document.getElementById('tabM').classList.remove('active');
         document.getElementById(m === 'force' ? 'tabF' : 'tabM').classList.add('active');
         
+        // UI Logic: Hide mass input when varying force
+        const mInput = document.getElementById('massInputGroup');
+        mInput.style.visibility = (m === 'mass') ? 'visible' : 'hidden';
+
         document.getElementById('mainInputLabel').innerText = m === 'force' ? "HANGER MASS (kg)" : "HANGER (CONST kg)";
-        document.getElementById('secondInputLabel').innerText = m === 'force' ? "TOTAL SYSTEM (FIXED kg)" : "TOTAL SYSTEM (VARY kg)";
         document.getElementById('meanLabel').innerText = m === 'force' ? "Calc Mass" : "Calc Force";
-        document.getElementById('tableHead').cells[0].innerText = m === 'force' ? "Hanger (kg)" : "Total (kg)";
+        
+        // Table Headers Update
+        document.getElementById('colHeader1').innerText = m === 'force' ? "Hanger (kg)" : "Total Mass (kg)";
+        document.getElementById('colHeader2').innerText = m === 'force' ? "Net Force (N)" : "1 / Mass (kg⁻¹)";
+
         updateDisplay();
     }
 
@@ -155,29 +168,55 @@
 
         data.forEach(p => {
             const netF = (currentMode === 'force' && useComp) ? (p.appliedF - fOffset) : p.appliedF;
+            const xVal = currentMode === 'force' ? p.appliedF : (1/p.total);
             const rowLabel = currentMode === 'force' ? p.hanger : p.total;
-            body.insertAdjacentHTML('afterbegin', `<tr><td>${rowLabel.toFixed(3)}</td><td>${netF.toFixed(3)}</td><td>${p.accel.toFixed(3)}</td><td><button onclick="remove(${p.id})">×</button></td></tr>`);
+            
+            body.insertAdjacentHTML('afterbegin', `
+                <tr>
+                    <td>${rowLabel.toFixed(3)}</td>
+                    <td>${(currentMode === 'force' ? netF : xVal).toFixed(3)}</td>
+                    <td>${p.accel.toFixed(3)}</td>
+                    <td><button onclick="remove(${p.id})">×</button></td>
+                </tr>`);
         });
 
         document.getElementById('statCount').innerText = n;
         document.getElementById('statSlope').innerText = slope.toFixed(3);
-        document.getElementById('statMean').innerText = currentMode === 'force' ? (slope > 0 ? (1/slope).toFixed(3) : "0.00") : (slope.toFixed(3) + " N");
+        
+        // In Force mode: m = 1/slope. In Mass mode: F = slope.
+        document.getElementById('statMean').innerText = currentMode === 'force' ? 
+            (slope > 0 ? (1/slope).toFixed(3) + " kg" : "0.00") : 
+            (slope.toFixed(3) + " N");
 
         drawChart(data, slope, intercept, fOffset, useComp);
     }
 
     function drawChart(data, slope, intercept, fOffset, useComp) {
         if (chart) chart.destroy();
-        const pts = data.map(p => ({ x: (currentMode === 'force' && useComp) ? (p.appliedF - fOffset) : (currentMode === 'force' ? p.appliedF : (1/p.total)), y: p.accel }));
+        const pts = data.map(p => ({ 
+            x: (currentMode === 'force' && useComp) ? (p.appliedF - fOffset) : (currentMode === 'force' ? p.appliedF : (1/p.total)), 
+            y: p.accel 
+        }));
+        
         const maxX = pts.length > 0 ? Math.max(...pts.map(p => p.x)) * 1.2 : 1;
         const lineData = (useComp && currentMode === 'force') 
             ? [{x: 0, y: 0}, {x: maxX, y: slope * maxX}]
             : [{x: 0, y: intercept}, {x: maxX, y: slope * maxX + intercept}];
 
+        const xTitle = currentMode === 'force' ? 
+            (useComp ? 'Net Force (N)' : 'Applied Force (N)') : 
+            'Inverse Mass (1/kg)';
+
         chart = new Chart(document.getElementById('physicsChart'), {
             type: 'scatter',
             data: { datasets: [{ data: pts, backgroundColor: '#00d1b2' }, { data: lineData, type: 'line', borderColor: '#ffdd57', pointRadius: 0, borderWidth: 1 }]},
-            options: { scales: { x: { title: { display:true, text: (currentMode==='force' && useComp)?'Net Force (N)':'Applied Force / Inverse Mass', color:'#888'}, min:0}, y: { title: { display:true, text: 'Accel (m/s²)', color:'#888'}, min:0}}, plugins: { legend: { display: false }}}
+            options: { 
+                scales: { 
+                    x: { title: { display:true, text: xTitle, color:'#888'}, min:0}, 
+                    y: { title: { display:true, text: 'Acceleration (m/s²)', color:'#888'}, min:0}
+                }, 
+                plugins: { legend: { display: false }}
+            }
         });
     }
 
