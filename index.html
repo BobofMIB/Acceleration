@@ -25,9 +25,10 @@
         table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.8em; }
         th { background: #333; color: #00d1b2; padding: 8px; }
         td { border: 1px solid #444; padding: 8px; text-align: center; }
-        .fric-control { display: flex; align-items: center; justify-content: space-between; background: #222; padding: 10px; border-radius: 8px; border: 1px dashed #555; }
+        .control-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+        .toggle-box { background: #222; padding: 10px; border-radius: 8px; border: 1px dashed #555; display: flex; justify-content: space-between; align-items: center; font-size: 0.8em; }
         #fricValDisp { color: #ffdd57; font-weight: bold; }
-        .hidden { display: none; }
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
@@ -60,29 +61,30 @@
 
     <button id="armBtn" class="btn-arm state-idle" onclick="armSystem()">ARM PHOTOGATES</button>
 
-    <div class="fric-control">
-        <div style="font-size:0.8em;">Friction Offset: <span id="fricValDisp">OFF</span></div>
-        <input type="checkbox" id="fricToggle" onchange="updateDisplay()" style="width:20px; height:20px; cursor:pointer;">
+    <div class="control-panel">
+        <div class="toggle-box">
+            <span>Friction Offset: <span id="fricValDisp">OFF</span></span>
+            <input type="checkbox" id="fricToggle" onchange="updateDisplay()">
+        </div>
+        <div class="toggle-box">
+            <span>Show Raw Timing</span>
+            <input type="checkbox" id="rawToggle" onchange="updateDisplay()">
+        </div>
     </div>
 
-    <div class="stats-box">
+    <div id="physicsStats" class="stats-box">
         <div><div class="stat-label">Slope</div><div id="statSlope" class="stat-val">0.00</div></div>
         <div><div class="stat-label">Trials</div><div id="statCount" class="stat-val">0</div></div>
         <div><div class="stat-label" id="meanLabel">Calc Mass</div><div id="statMean" class="stat-val">0.00</div></div>
         <button onclick="clearData()" style="background:#cc241d; color:white; border:none; border-radius:4px; font-size:0.7em; font-weight:bold;">CLEAR</button>
     </div>
 
-    <canvas id="physicsChart" style="max-height: 180px;"></canvas>
+    <div id="chartContainer">
+        <canvas id="physicsChart" style="max-height: 180px;"></canvas>
+    </div>
 
     <table>
-        <thead>
-            <tr id="tableHead">
-                <th id="colHeader1">Hanger (kg)</th>
-                <th id="colHeader2">Net Force (N)</th>
-                <th>Accel (m/s²)</th>
-                <th>X</th>
-            </tr>
-        </thead>
+        <thead id="tableHead"></thead>
         <tbody id="dataBody"></tbody>
     </table>
 </div>
@@ -101,18 +103,9 @@
         document.getElementById('tabF').classList.remove('active');
         document.getElementById('tabM').classList.remove('active');
         document.getElementById(m === 'force' ? 'tabF' : 'tabM').classList.add('active');
-        
-        // UI Logic: Hide mass input when varying force
-        const mInput = document.getElementById('massInputGroup');
-        mInput.style.visibility = (m === 'mass') ? 'visible' : 'hidden';
-
+        document.getElementById('massInputGroup').style.visibility = (m === 'mass') ? 'visible' : 'hidden';
         document.getElementById('mainInputLabel').innerText = m === 'force' ? "HANGER MASS (kg)" : "HANGER (CONST kg)";
         document.getElementById('meanLabel').innerText = m === 'force' ? "Calc Mass" : "Calc Force";
-        
-        // Table Headers Update
-        document.getElementById('colHeader1').innerText = m === 'force' ? "Hanger (kg)" : "Total Mass (kg)";
-        document.getElementById('colHeader2').innerText = m === 'force' ? "Net Force (N)" : "1 / Mass (kg⁻¹)";
-
         updateDisplay();
     }
 
@@ -134,12 +127,12 @@
                 if (str.startsWith("DAT:")) {
                     document.getElementById('armBtn').className = "btn-arm state-idle";
                     document.getElementById('armBtn').innerText = "ARM PHOTOGATES";
-                    const [v1, v2, a] = str.substring(4).split(',').map(Number);
+                    const [dt1, dt2, a] = str.substring(4).split(',').map(Number);
                     
                     const mH = parseFloat(document.getElementById('mainInput').value);
                     const mT = parseFloat(document.getElementById('totalMassInput').value);
 
-                    const entry = { id: Date.now(), hanger: mH, total: mT, accel: a, appliedF: mH * g };
+                    const entry = { id: Date.now(), hanger: mH, total: mT, accel: a, dt1: dt1, dt2: dt2, appliedF: mH * g };
                     if (currentMode === 'force') forceData.push(entry); else massData.push(entry);
                     updateDisplay();
                 }
@@ -150,9 +143,24 @@
     function updateDisplay() {
         const data = currentMode === 'force' ? forceData : massData;
         const body = document.getElementById('dataBody');
+        const head = document.getElementById('tableHead');
         const useComp = document.getElementById('fricToggle').checked;
-        body.innerHTML = "";
+        const showRaw = document.getElementById('rawToggle').checked;
+        
+        // Toggle visibility of calc blocks
+        document.getElementById('physicsStats').className = showRaw ? "stats-box hidden" : "stats-box";
+        document.getElementById('chartContainer').className = showRaw ? "hidden" : "";
 
+        // Build Table Header
+        if (showRaw) {
+            head.innerHTML = `<tr><th>Hanger (kg)</th><th>dt1 (ms)</th><th>dt2 (ms)</th><th>X</th></tr>`;
+        } else {
+            const h1 = currentMode === 'force' ? "Hanger (kg)" : "Total (kg)";
+            const h2 = currentMode === 'force' ? "Net Force (N)" : "1/Mass (kg⁻¹)";
+            head.innerHTML = `<tr><th>${h1}</th><th>${h2}</th><th>Accel (m/s²)</th><th>X</th></tr>`;
+        }
+
+        body.innerHTML = "";
         let sx=0, sy=0, sxy=0, sx2=0, n = data.length;
         data.forEach(p => {
             const x = currentMode === 'force' ? p.appliedF : (1/p.total);
@@ -167,56 +175,34 @@
         document.getElementById('fricValDisp').innerText = useComp ? fOffset.toFixed(3) + " N" : "OFF";
 
         data.forEach(p => {
-            const netF = (currentMode === 'force' && useComp) ? (p.appliedF - fOffset) : p.appliedF;
-            const xVal = currentMode === 'force' ? p.appliedF : (1/p.total);
-            const rowLabel = currentMode === 'force' ? p.hanger : p.total;
-            
-            body.insertAdjacentHTML('afterbegin', `
-                <tr>
-                    <td>${rowLabel.toFixed(3)}</td>
-                    <td>${(currentMode === 'force' ? netF : xVal).toFixed(3)}</td>
-                    <td>${p.accel.toFixed(3)}</td>
-                    <td><button onclick="remove(${p.id})">×</button></td>
-                </tr>`);
+            if (showRaw) {
+                body.insertAdjacentHTML('afterbegin', `<tr><td>${p.hanger.toFixed(3)}</td><td>${p.dt1}</td><td>${p.dt2}</td><td><button onclick="remove(${p.id})">×</button></td></tr>`);
+            } else {
+                const netF = (currentMode === 'force' && useComp) ? (p.appliedF - fOffset) : p.appliedF;
+                const xVal = currentMode === 'force' ? p.appliedF : (1/p.total);
+                const rowLabel = currentMode === 'force' ? p.hanger : p.total;
+                body.insertAdjacentHTML('afterbegin', `<tr><td>${rowLabel.toFixed(3)}</td><td>${(currentMode === 'force' ? netF : xVal).toFixed(3)}</td><td>${p.accel.toFixed(3)}</td><td><button onclick="remove(${p.id})">×</button></td></tr>`);
+            }
         });
 
-        document.getElementById('statCount').innerText = n;
-        document.getElementById('statSlope').innerText = slope.toFixed(3);
-        
-        // In Force mode: m = 1/slope. In Mass mode: F = slope.
-        document.getElementById('statMean').innerText = currentMode === 'force' ? 
-            (slope > 0 ? (1/slope).toFixed(3) + " kg" : "0.00") : 
-            (slope.toFixed(3) + " N");
-
-        drawChart(data, slope, intercept, fOffset, useComp);
+        if (!showRaw) {
+            document.getElementById('statCount').innerText = n;
+            document.getElementById('statSlope').innerText = slope.toFixed(3);
+            document.getElementById('statMean').innerText = currentMode === 'force' ? (slope > 0 ? (1/slope).toFixed(3) + " kg" : "0.00") : (slope.toFixed(3) + " N");
+            drawChart(data, slope, intercept, fOffset, useComp);
+        }
     }
 
     function drawChart(data, slope, intercept, fOffset, useComp) {
         if (chart) chart.destroy();
-        const pts = data.map(p => ({ 
-            x: (currentMode === 'force' && useComp) ? (p.appliedF - fOffset) : (currentMode === 'force' ? p.appliedF : (1/p.total)), 
-            y: p.accel 
-        }));
-        
+        const pts = data.map(p => ({ x: (currentMode === 'force' && useComp) ? (p.appliedF - fOffset) : (currentMode === 'force' ? p.appliedF : (1/p.total)), y: p.accel }));
         const maxX = pts.length > 0 ? Math.max(...pts.map(p => p.x)) * 1.2 : 1;
-        const lineData = (useComp && currentMode === 'force') 
-            ? [{x: 0, y: 0}, {x: maxX, y: slope * maxX}]
-            : [{x: 0, y: intercept}, {x: maxX, y: slope * maxX + intercept}];
-
-        const xTitle = currentMode === 'force' ? 
-            (useComp ? 'Net Force (N)' : 'Applied Force (N)') : 
-            'Inverse Mass (1/kg)';
-
+        const lineData = (useComp && currentMode === 'force') ? [{x: 0, y: 0}, {x: maxX, y: slope * maxX}] : [{x: 0, y: intercept}, {x: maxX, y: slope * maxX + intercept}];
+        
         chart = new Chart(document.getElementById('physicsChart'), {
             type: 'scatter',
             data: { datasets: [{ data: pts, backgroundColor: '#00d1b2' }, { data: lineData, type: 'line', borderColor: '#ffdd57', pointRadius: 0, borderWidth: 1 }]},
-            options: { 
-                scales: { 
-                    x: { title: { display:true, text: xTitle, color:'#888'}, min:0}, 
-                    y: { title: { display:true, text: 'Acceleration (m/s²)', color:'#888'}, min:0}
-                }, 
-                plugins: { legend: { display: false }}
-            }
+            options: { scales: { x: { min:0 }, y: { min:0 }}, plugins: { legend: { display: false }}}
         });
     }
 
